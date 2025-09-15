@@ -1,9 +1,8 @@
-import csv
+import pandas as pd
 import os
 import json
 import re
 import random
-
 #----------Mapping----------------------
 CATEGORY_FEEDBACK = {
     "emotional": {
@@ -78,17 +77,8 @@ CATEGORY_FEEDBACK = {
     }
 }
 
-def read_csv_to_list(filename):
-    """Read CSV file and return as list of dictionaries"""
-    questions = []
-    try:
-        with open(filename, 'r', encoding='utf-8') as file:
-            reader = csv.DictReader(file)
-            for row in reader:
-                questions.append(row)
-    except FileNotFoundError:
-        print(f"Warning: {filename} not found")
-    return questions
+# ---------- Progress tracking (removed - using randomization instead) ----------
+# Progress tracking functions removed since we now use random question selection
 
 # ---------- Stress calculation ----------
 def calculate_stress_level(score):
@@ -104,57 +94,60 @@ def get_questions(role):
     # Generate random indices for each category
     random.seed()  # Use current time as seed for true randomization
     
-    # Read CSV files
-    emotional_questions = read_csv_to_list("datasets/emotional.csv")
-    safety_questions = read_csv_to_list("datasets/safety.csv")
-    confidence_questions = read_csv_to_list("datasets/confidence.csv")
-    social_questions = read_csv_to_list("datasets/social_support.csv")
-    time_questions = read_csv_to_list("datasets/time_management.csv")
+    emotional_df = pd.read_csv("datasets/emotional.csv")
+    safety_df = pd.read_csv("datasets/safety.csv")
+    confidence_df = pd.read_csv("datasets/confidence.csv")
+    social_df = pd.read_csv("datasets/social_support.csv")
+    time_df = pd.read_csv("datasets/time_management.csv")
 
     if role == "student":
-        role_questions = read_csv_to_list("datasets/student.csv")
+        role_df = pd.read_csv("datasets/student.csv")
     elif role == "working_women":
-        role_questions = read_csv_to_list("datasets/working_women.csv")
+        role_df = pd.read_csv("datasets/working_women.csv")
     else:
-        role_questions = read_csv_to_list("datasets/housewife.csv")
+        role_df = pd.read_csv("datasets/housewife.csv")
+
+    # Get random indices for each category
+    emotional_idx = random.randint(0, len(emotional_df) - 1)
+    safety_idx = random.randint(0, len(safety_df) - 1)
+    confidence_idx = random.randint(0, len(confidence_df) - 1)
+    social_idx = random.randint(0, len(social_df) - 1)
+    time_idx = random.randint(0, len(time_df) - 1)
 
     # Get random questions from universal categories
-    universal_questions = []
-    
-    if emotional_questions:
-        universal_questions.append(random.choice(emotional_questions))
-    if safety_questions:
-        universal_questions.append(random.choice(safety_questions))
-    if confidence_questions:
-        universal_questions.append(random.choice(confidence_questions))
-    if social_questions:
-        universal_questions.append(random.choice(social_questions))
-    if time_questions:
-        universal_questions.append(random.choice(time_questions))
+    universal_questions = pd.concat([
+        emotional_df.iloc[[emotional_idx]],
+        safety_df.iloc[[safety_idx]],
+        confidence_df.iloc[[confidence_idx]],
+        social_df.iloc[[social_idx]],
+        time_df.iloc[[time_idx]]
+    ])
 
     # Get 3 random questions from role-specific categories
-    role_selected = []
-    if role_questions:
-        # Ensure we have enough questions
-        if len(role_questions) >= 3:
-            role_selected = random.sample(role_questions, 3)
-        else:
-            role_selected = role_questions
+    # Each category has 50 questions, so we pick random ones from each section
+    role_q1_idx = random.randint(0, 49)      # from rows 0–49
+    role_q2_idx = random.randint(50, 99)     # from rows 50–99  
+    role_q3_idx = random.randint(100, 149)  # from rows 100–149
 
-    # Combine all questions
-    all_questions = universal_questions + role_selected
+    q1 = role_df.iloc[role_q1_idx]
+    q2 = role_df.iloc[role_q2_idx]
+    q3 = role_df.iloc[role_q3_idx]
+
+    role_questions = pd.DataFrame([q1, q2, q3])
+
+    questions = pd.concat([universal_questions, role_questions]).reset_index(drop=True)
     
     # Shuffle the questions to randomize order
-    random.shuffle(all_questions)
+    questions = questions.sample(frac=1).reset_index(drop=True)
     
-    return all_questions, 0  # Return 0 as index since we're not tracking sequential progress anymore
+    return questions, 0  # Return 0 as index since we're not tracking sequential progress anymore
 
 #-------------------Evaluate-Stress--------------------------------
 def evaluate_stress(role, answers):
-    questions_list, _ = get_questions(role)
+    questions_df, _ = get_questions(role)
     score = sum(answers)
     level = calculate_stress_level(score)
-    stressed_categories = analyze_subcategory_stress(questions_list, answers)
+    stressed_categories = analyze_subcategory_stress(questions_df, answers)
     detailed_feedback = generate_detailed_feedback(stressed_categories)
 
     return {
@@ -165,16 +158,17 @@ def evaluate_stress(role, answers):
     }
 
 #-------------------Sub-Category stress detection -------------------------
-def analyze_subcategory_stress(questions_list, answers):
+def analyze_subcategory_stress(questions_df, answers):
     stressed_categories = set()
     
     for i, response in enumerate(answers):
-        if response >= 4 and i < len(questions_list):
-            raw_category = questions_list[i].get('Category', '')
+        if response >= 4:
+            raw_category = questions_df.iloc[i]['Category']
             normalized = normalize_category_name(raw_category)
             stressed_categories.add(normalized)
     
     return stressed_categories
+
 
 def normalize_category_name(raw_category):
     cat = raw_category.lower().strip()
@@ -211,6 +205,8 @@ def normalize_category_name(raw_category):
     else:
         return cat.replace(" ", "_")
 
+
+
 def generate_detailed_feedback(stressed_categories):
     feedback = []
     
@@ -227,6 +223,7 @@ def generate_detailed_feedback(stressed_categories):
     
     return "\n".join(feedback)
 
+
 # ---------- Example usage for testing ----------
 if __name__ == "__main__":
     role = input("Enter role (student, working_women, housewife): ").strip().lower()
@@ -234,10 +231,10 @@ if __name__ == "__main__":
     print(index)
     print(f"\nToday's Quiz for {role.capitalize()}:")
     answers = []
-    for i, question in enumerate(questions):
-        print(f"\nQ{i+1}: {question['Question']}")
+    for i, row in questions.iterrows():
+        print(f"\nQ{i+1}: {row['Question']}")
         for j in range(1, 6):
-            print(f"  {j}. {question[f'Option{j}']}")
+            print(f"  {j}. {row[f'Option{j}']}")
         while True:
             try:
                 val = int(input(f"Your answer for Q{i+1} (1-5): "))

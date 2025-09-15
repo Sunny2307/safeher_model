@@ -1,7 +1,8 @@
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import stress_backend_simple
-import os
+import stress_backend
+import pandas as pd
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
@@ -18,11 +19,12 @@ def get_questions():
             return jsonify({"error": "Invalid role"}), 400
 
         print(f"Getting questions for role: {role}")
-        questions_list, _ = stress_backend_simple.get_questions(role)
+        questions_df, _ = stress_backend.get_questions(role)
+        questions = questions_df.to_dict(orient="records")
         
         # Temporarily disable data cleaning to debug
-        print(f"Returning {len(questions_list)} questions")
-        return jsonify({"questions": questions_list})
+        print(f"Returning {len(questions)} questions")
+        return jsonify({"questions": questions})
     except Exception as e:
         print(f"Error in get_questions: {str(e)}")
         return jsonify({"error": str(e)}), 500
@@ -43,18 +45,16 @@ def submit_answers():
             return jsonify({"error": "Answers must be a list of 8 integers"}), 400
 
         print(f"Evaluating stress for role: {role}")
-        result = stress_backend_simple.evaluate_stress(role, answers)
+        result = stress_backend.evaluate_stress(role, answers)
         print(f"Stress evaluation result: {result}")
         return jsonify(result)
     except Exception as e:
         print(f"Error in submit_answers: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-@app.route("/health", methods=["GET"])
-def health_check():
-    return jsonify({"status": "healthy", "message": "Stress model API is running"})
 
 if __name__ == "__main__":
+    import os
     port = int(os.environ.get('PORT', 5000))
     debug = os.environ.get('FLASK_ENV') == 'development'
     app.run(debug=debug, host='0.0.0.0', port=port)
